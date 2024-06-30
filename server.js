@@ -1,52 +1,62 @@
 const express = require('express');
-const mongoose = require('mongoose');
+
 const router = express.Router();
 const bodyParser = require('body-parser');
 const cors = require('cors');
-const OpenAI = require('openai');
-const authRoutes = require('./router/authRoutes/signup');
+
 const updateRoutes = require('./router/updateRoutes/courseupdate');
 const getRoutes = require('./router/getRoutes/dashboard');
 const deleteRoutes = require('./router/deleteRoutes/deleteAll');
-// const chatgptRoutes = require('./router/gpt/chatgpt')
+
 const app = express();
 const PORT = process.env.PORT || 5000;
-const MONGOURI = "mongodb+srv://recruitz_softflow:recruitz_softflow@recruitzmain.lbunv4c.mongodb.net/?retryWrites=true&w=majority";
+
+const { ChatPromptTemplate } =require( "@langchain/core/prompts");
+const { ChatAnthropic } = require('@langchain/anthropic');
+const { AgentExecutor, createToolCallingAgent } = require('langchain/agents');
+const { TavilySearchResults } = require('@langchain/community/tools/tavily_search');
+
 
 app.use(express.json());
 app.use(cors());
-// app.use('/gpt',chatgptRoutes);
+
 app.use('/update',updateRoutes);
-app.use('/',authRoutes);
+
 app.use('/get',getRoutes);
 app.use('/delete',deleteRoutes);
 
-const openai = new OpenAI({ apiKey: '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' });
 app.post('/generate-questions', async (req, res) => {
-  //   const userMessage = "Create a list of 8 questions for an interview with a science fiction author.";
-  
-    try {
-      const response = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages: [
-          { role: "system", content: "Create a list of 5 basic questions for an interview with java skills  " },
-          // { role: "user", content: userMessage },
-        ],
-        temperature: 0.5,
-          max_tokens: 64,
-          top_p: 1,
-      });
-  
-      const assistantReply = response.choices[0].message.content;
-      res.json({ questions: assistantReply.split('\n') });
-    } catch (error) {
-      console.error('OpenAI API error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+  const { topic, difficulty } = req.body;
+  console.log(topic);
+
+  if (!topic) {
+    return res.status(400).json({ error: 'Topic is required' });
+  }
+
+  try {
+    const model = new ChatAnthropic({
+      temperature: 0.9,
+      model: "claude-3-5-sonnet-20240620",
+      apiKey: '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',
+      maxTokens: 1024,
+    });
+
+    const assistantReply = await model.invoke(`Think yourself as an Technical Interviewer and Give 1 interview questions on ${topic} of difficulty level ${difficulty} . Only give the question.`);
+
+    if (assistantReply && assistantReply.lc_kwargs && assistantReply.lc_kwargs.content) {
+      res.json({ questions: assistantReply.lc_kwargs.content });
+    } else {
+      throw new Error('Invalid response from the model');
     }
-  });
+  } catch (error) {
+    console.error('Anthropic API error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 
 app.post('/generate-feedback', async (req, res) => {
-  //   const userMessage = "Create a list of 8 questions for an interview with a science fiction author.";
+ 
   
     try {
       const { scoreType, currentScore } = req.body;
@@ -76,22 +86,6 @@ app.post('/generate-feedback', async (req, res) => {
       res.status(500).json({ error: 'Internal server error' });
     }
   });
-
-mongoose.connect(MONGOURI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-});
-
-
-mongoose.connection.on('connected', () => {
-  console.log('Connected to MongoDB');
-
-});
-
-mongoose.connection.on('error', (err) => {
-  console.error(`MongoDB connection error: ${err}`);
-});
-
 
 
 app.listen(PORT, () => {
